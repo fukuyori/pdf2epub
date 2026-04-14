@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf2epub"
+version = "0.1.0"
+description = "Convert OCR-scanned PDF files into EPUB with Japanese-friendly metadata heuristics."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "PyMuPDF>=1.24.0",
+]
+
+[project.scripts]
+pdf2epub = "pdf2epub.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
