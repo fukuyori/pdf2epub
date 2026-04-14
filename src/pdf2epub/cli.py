@@ -46,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
     )
     convert_parser.add_argument(
+        "--layout",
+        choices=("fixed", "reflow"),
+        default="fixed",
+        help="Choose fixed-layout EPUB output or reflowable page output.",
+    )
+    convert_parser.add_argument(
         "--ocr-mode",
         choices=("auto", "pdf-text", "tesseract", "none"),
         default="auto",
@@ -98,6 +104,7 @@ def main() -> int:
                 author=args.author,
                 language=args.language,
                 binding=args.binding,
+                layout=args.layout,
                 dpi=args.dpi,
                 ocr_mode=args.ocr_mode,
                 ocr_lang=args.ocr_lang,

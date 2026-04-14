@@ -31,17 +31,36 @@ BOOK_CSS = """
 html, body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  height: 100%;
+}
+body {
   font-family: serif;
   line-height: 1.6;
 }
-body {
+body.reflow-page {
   padding: 1rem;
+}
+body.fixed-page {
+  overflow: hidden;
+}
+.page-frame {
+  width: 100%;
+  height: 100%;
 }
 .page-image {
   display: block;
   width: 100%;
+  margin: 0 auto;
+}
+body.fixed-page .page-image {
+  height: 100%;
+  object-fit: contain;
+  margin: 0;
+}
+body.reflow-page .page-image {
   height: auto;
-  margin: 0 auto 1rem;
+  margin-bottom: 1rem;
 }
 .ocr-text {
   white-space: pre-wrap;
@@ -68,6 +87,7 @@ class ConversionOptions:
     author: str | None = None
     language: str = "ja"
     binding: str = "auto"
+    layout: str = "fixed"
     dpi: int = 150
     ocr_mode: str = "auto"
     ocr_lang: str = "jpn+eng"
@@ -178,10 +198,13 @@ def inspect_pdf(
 def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
     if not options.include_images and not options.include_ocr_text:
         raise ValueError("At least one of include_images/include_ocr_text must be enabled.")
+    if options.layout not in {"fixed", "reflow"}:
+        raise ValueError("layout must be either 'fixed' or 'reflow'.")
 
     fitz = _load_fitz()
     options.output_dir.mkdir(parents=True, exist_ok=True)
     title_candidates = load_title_candidates(options.title_candidates_file)
+    use_fixed_layout = options.layout == "fixed"
 
     with fitz.open(options.input_pdf) as doc:
         text_samples = []
@@ -292,8 +315,15 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                     f"<title>{escape(resolved_title)} - {page_number + 1}</title>",
                     '<link rel="stylesheet" type="text/css" href="../styles/book.css"/>',
                     "</head>",
-                    "<body>",
                 ]
+                if use_fixed_layout:
+                    xhtml_parts.insert(
+                        4,
+                        f'<meta name="viewport" content="width={pix.width}, height={pix.height}"/>',
+                    )
+                    xhtml_parts.extend(['<body class="fixed-page">', '<div class="page-frame">'])
+                else:
+                    xhtml_parts.append('<body class="reflow-page">')
                 if options.include_images:
                     xhtml_parts.append(
                         f'<img class="page-image" src="../{image_name}" alt="Page {page_number + 1}"/>'
@@ -301,13 +331,20 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                 if options.include_ocr_text:
                     if final_text:
                         xhtml_parts.append(f'<pre class="ocr-text">{escape(final_text)}</pre>')
+                if use_fixed_layout:
+                    xhtml_parts.append("</div>")
                 xhtml_parts.extend(["</body>", "</html>"])
                 epub.writestr(f"OEBPS/{xhtml_name}", "\n".join(xhtml_parts))
 
                 manifest_items.append(
                     f'<item id="{page_id}" href="{xhtml_name}" media-type="application/xhtml+xml"/>'
                 )
-                spine_items.append(f'<itemref idref="{page_id}"/>')
+                if use_fixed_layout:
+                    spine_items.append(
+                        f'<itemref idref="{page_id}" properties="rendition:layout-pre-paginated"/>'
+                    )
+                else:
+                    spine_items.append(f'<itemref idref="{page_id}"/>')
             if toc_page_index is not None:
                 toc_href = "pages/detected-toc.xhtml"
                 toc_sections = []
@@ -328,7 +365,7 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                         <title>{title_for_opf} - 目次</title>
                         <link rel="stylesheet" type="text/css" href="../styles/book.css"/>
                       </head>
-                      <body>
+                      <body class="reflow-page">
                         <h1>目次</h1>
                         <p>PDF の {toc_page_number} ページ目から検出した目次です。</p>
                         <ol>
@@ -344,9 +381,20 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                     f'<item id="detected-toc" href="{toc_href}" media-type="application/xhtml+xml"/>'
                 )
                 if spine_items:
-                    spine_items.insert(1, '<itemref idref="detected-toc"/>')
+                    if use_fixed_layout:
+                        spine_items.insert(
+                            1,
+                            '<itemref idref="detected-toc" properties="rendition:layout-reflowable"/>',
+                        )
+                    else:
+                        spine_items.insert(1, '<itemref idref="detected-toc"/>')
                 else:
-                    spine_items.append('<itemref idref="detected-toc"/>')
+                    if use_fixed_layout:
+                        spine_items.append(
+                            '<itemref idref="detected-toc" properties="rendition:layout-reflowable"/>'
+                        )
+                    else:
+                        spine_items.append('<itemref idref="detected-toc"/>')
 
                 toc_nav_entries = ['<li><a href="pages/page-0001.xhtml">表紙</a></li>']
                 toc_nav_entries.append(f'<li><a href="{toc_href}">目次</a></li>')
@@ -364,7 +412,7 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                     <title>{title_for_opf}</title>
                     <link rel="stylesheet" type="text/css" href="styles/book.css"/>
                   </head>
-                  <body>
+                  <body class="reflow-page">
                     <nav epub:type="toc" id="toc">
                       <h1>{title_for_opf}</h1>
                       <ol>
@@ -383,6 +431,16 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
                 f"<dc:language>{escape(options.language)}</dc:language>",
                 f"<meta property=\"dcterms:modified\">{modified}</meta>",
             ]
+            if use_fixed_layout:
+                metadata_lines.extend(
+                    [
+                        '<meta property="rendition:layout">pre-paginated</meta>',
+                        '<meta property="rendition:orientation">auto</meta>',
+                        '<meta property="rendition:spread">auto</meta>',
+                    ]
+                )
+            else:
+                metadata_lines.append('<meta property="rendition:layout">reflowable</meta>')
             if options.include_images:
                 metadata_lines.append('<meta name="cover" content="img-0001"/>')
             if author_for_opf:
@@ -391,7 +449,7 @@ def convert_pdf_to_epub(options: ConversionOptions) -> ConversionResult:
             content_opf = textwrap.dedent(
                 f"""\
                 <?xml version="1.0" encoding="utf-8"?>
-                <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0" unique-identifier="pub-id">
+                <package xmlns="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/" version="3.0" unique-identifier="pub-id" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
                   <metadata>
                     {' '.join(metadata_lines)}
                   </metadata>

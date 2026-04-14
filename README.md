@@ -1,17 +1,29 @@
 # pdf2epub
 
-OCR済みのスキャンPDFを EPUB に変換するための Python CLI です。
+スキャンPDFや通常の文字レイヤー付きPDFを EPUB に変換するための Python CLI です。
 
 主な機能:
 
-- OCR 文字レイヤー付き PDF から本文テキストを抽出
+- 文字レイヤー付き PDF から本文テキストを抽出
 - ページ画像を EPUB に埋め込み
+- 固定レイアウト EPUB として各ページを出力
 - `右閉じ/左閉じ` を `auto / rtl / ltr` で指定
+- `--layout fixed / reflow` で固定レイアウトかリフロー型かを切り替え
 - `titles.txt` の候補辞書と `PDFメタデータ / 表紙OCR` を照合してタイトルを推定
 - `PDFメタデータ / 表紙OCR` から `巻・号数` を抽出して EPUB メタデータと出力名に反映
 - 1ページ目を EPUB の表紙画像として登録
 - 目次ページを検出できた場合は、抽出した目次をまとめたページを EPUB に追加
 - PDF の文字レイヤーが空のページでは、`tesseract` が入っていれば OCR フォールバック可能
+
+向いている用途:
+
+- スキャンPDFを見た目に近いまま EPUB 化したい
+- 通常PDFをページ単位で EPUB にまとめたい
+
+注意:
+
+- `--layout reflow` を選んでも、PDF の段落構造や見出し構造を再構成する実装ではありません。
+- 一般的なリフローEPUBのように本文を作り直す用途より、ページ単位で保持したい用途に向いています。
 
 ## セットアップ
 
@@ -45,10 +57,23 @@ pdf2epub convert ".\input\週刊少年サンプル 2026年04月号.pdf" --bindin
 uv run pdf2epub convert ".\input\週刊少年サンプル 2026年04月号.pdf" --binding auto --ocr-mode auto
 ```
 
+通常の文字レイヤー付き PDF の例:
+
+```bash
+uv run pdf2epub convert ".\input\manual.pdf" --ocr-mode pdf-text --layout reflow
+```
+
+スキャン中心の PDF の例:
+
+```bash
+uv run pdf2epub convert ".\input\scan.pdf" --ocr-mode auto --layout fixed
+```
+
 主なオプション:
 
 - `--binding {auto,rtl,ltr}`
 - `--ocr-mode {auto,pdf-text,tesseract,none}`
+- `--layout {fixed,reflow}`
 - `--ocr-lang jpn+eng`
 - `--titles-file .\titles.txt`
 - `--dpi 150`
@@ -127,6 +152,11 @@ PowerShell 用の実行スクリプトもあります。
 - `-Recurse` : サブフォルダも対象にする
 - `-InspectOnly` : 変換せず解析だけ行う
 
+注意:
+
+- 現在の PowerShell スクリプトは `--layout` 切り替えには未対応です。
+- `layout` を指定したい場合は `pdf2epub convert ... --layout ...` または `uv run pdf2epub convert ... --layout ...` を直接使ってください。
+
 出力例:
 
 ```text
@@ -181,6 +211,18 @@ Interface
 
 日本語主体のコミック・雑誌・文芸書を優先して `rtl` に寄せる実装です。完全自動判定は難しいため、誤判定が困る場合は `--binding rtl` または `--binding ltr` を明示指定してください。
 
+## レイアウトの考え方
+
+- `--layout fixed`: 既定値です。各ページを固定レイアウト EPUB として出力します。
+- `--layout reflow`: 固定レイアウト宣言を付けず、通常ページとして出力します。
+
+注意:
+
+- `reflow` を選んでも、現在の本文構造は PDF を段落再構成する実装ではありません。
+- 画像と抽出テキストをページごとに並べる形なので、一般的なリフローEPUBのような再構成とは異なります。
+- 通常PDFで本文テキストを優先したい場合は `--ocr-mode pdf-text` を推奨します。
+- スキャンPDFでは `--ocr-mode auto` か `--ocr-mode tesseract` を使うと OCR フォールバックが効きます。
+
 ## 出力ファイル名
 
 既定では、出力する EPUB のファイル名は入力 PDF のファイル名と同じです。拡張子だけ `.pdf` から `.epub` に変わります。
@@ -201,3 +243,4 @@ Interface
 - OCR 品質は PDF の文字レイヤー、または Tesseract の結果に依存します。
 - 見開き分割や縦書き再構成は未対応です。
 - 章立て抽出ではなく、ページ単位で画像と OCR テキストを格納するシンプルな EPUB です。
+- 固定レイアウト宣言は付与しますが、OCR テキストは座標付きテキストレイヤーではありません。
